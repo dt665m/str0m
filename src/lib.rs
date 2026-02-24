@@ -1163,7 +1163,7 @@ impl Rtc {
             )
             .expect("DTLS to init without problem"),
             dtls_connected: false,
-            dtls_buf: vec![0; 2000],
+            dtls_buf: vec![0; 65535],
             next_dtls_timeout: None,
             session,
             sctp: RtcSctp::new(),
