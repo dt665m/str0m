@@ -1635,6 +1635,11 @@ impl Rtc {
         // Poll DTLS output - collect packets, handle events
         let mut just_connected = false;
         loop {
+            // The DTLS backend can report that dtls_buf is too small for the next
+            // pending output. We can't resize inside the match, since the matched
+            // value borrows the buffer, so remember the size and grow it after.
+            let mut grow_dtls_buf_to = None;
+
             match self.dtls.poll_output(&mut self.dtls_buf) {
                 DtlsOutput::Packet(_) => {
                     unreachable!("We don't expect DTLS packets here since we use poll_packet");
@@ -1689,11 +1694,25 @@ impl Rtc {
                     self.start_close()?;
                     return Ok(Output::Event(Event::Closed));
                 }
+                DtlsOutput::BufferTooSmall { needed } => {
+                    grow_dtls_buf_to = Some(needed);
+                }
                 other => {
                     return Err(RtcError::Dtls(DtlsError::Io(std::io::Error::other(
                         format!("Unexpected DTLS output: {other:?}"),
                     ))));
                 }
+            }
+
+            // The output that didn't fit is still pending. Grow the buffer and
+            // let the next iteration poll for it again.
+            if let Some(needed) = grow_dtls_buf_to {
+                debug!(
+                    "Growing DTLS output buffer from {} to {} bytes",
+                    self.dtls_buf.len(),
+                    needed
+                );
+                self.dtls_buf.resize(needed, 0);
             }
         }
 
